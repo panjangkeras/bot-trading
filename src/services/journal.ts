@@ -1,5 +1,13 @@
 import { supabase } from './supabase.js';
 
+function isLiveExit(row: Record<string, any>) {
+  const status = String(row.execution_status ?? '');
+  if (status === 'live_exit_sent' || status === 'live_close_sent') return true;
+  if (status !== 'trade_management_action') return false;
+  const reasons = Array.isArray(row.reason) ? row.reason.map(String) : [];
+  return reasons.some((reason) => ['tp1_partial_close', 'tp2_full_close', 'stop_loss_close', 'trailing_stop_close'].includes(reason));
+}
+
 export async function getJournalData(limit = 100) {
   const { data: runs, error } = await supabase
     .from('bot_runs')
@@ -12,14 +20,14 @@ export async function getJournalData(limit = 100) {
   const rows = runs ?? [];
   const signaled = rows.filter((row) => row.decision && row.decision !== 'none');
   const liveOrders = rows.filter((row) => row.execution_status === 'live_order_sent');
-  const liveExits = rows.filter((row) => row.execution_status === 'live_exit_sent' || row.execution_status === 'live_close_sent');
+  const liveExits = rows.filter(isLiveExit);
   const bySymbol = Object.values(rows.reduce<Record<string, { symbol: string; runs: number; signals: number; liveOrders: number; liveExits: number }>>((acc, row) => {
     const symbol = String(row.symbol ?? 'UNKNOWN');
     acc[symbol] ??= { symbol, runs: 0, signals: 0, liveOrders: 0, liveExits: 0 };
     acc[symbol].runs += 1;
     if (row.decision && row.decision !== 'none') acc[symbol].signals += 1;
     if (row.execution_status === 'live_order_sent') acc[symbol].liveOrders += 1;
-    if (row.execution_status === 'live_exit_sent' || row.execution_status === 'live_close_sent') acc[symbol].liveExits += 1;
+    if (isLiveExit(row)) acc[symbol].liveExits += 1;
     return acc;
   }, {}));
 

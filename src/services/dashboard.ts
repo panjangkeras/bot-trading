@@ -4,6 +4,14 @@ import { supabase } from './supabase.js';
 type RunRow = Record<string, any>;
 type ReviewRow = Record<string, any>;
 
+function isLiveExit(row: RunRow) {
+  const status = String(row.execution_status ?? '');
+  if (status === 'live_exit_sent' || status === 'live_close_sent') return true;
+  if (status !== 'trade_management_action') return false;
+  const reasons = Array.isArray(row.reason) ? row.reason.map(String) : [];
+  return reasons.some((reason) => ['tp1_partial_close', 'tp2_full_close', 'stop_loss_close', 'trailing_stop_close'].includes(reason));
+}
+
 function esc(value: unknown) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -48,7 +56,7 @@ export async function getDashboardData() {
       runs: botRuns.length,
       signals: botRuns.filter((row) => row.decision && row.decision !== 'none').length,
       liveOrders: botRuns.filter((row) => row.execution_status === 'live_order_sent').length,
-      liveExits: botRuns.filter((row) => row.execution_status === 'live_exit_sent' || row.execution_status === 'live_close_sent').length,
+      liveExits: botRuns.filter(isLiveExit).length,
       blocked: botRuns.filter((row) => String(row.execution_status ?? '').startsWith('blocked_')).length
     },
     lastBySymbol,
